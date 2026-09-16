@@ -17,6 +17,8 @@ const authRouter=Router()
     * @access public
     */
    authRouter.post("/login", authController.loginUserController)
+   authRouter.post( "/logout",authController.logoutUserController
+);
    module.exports=authRouter
     
     

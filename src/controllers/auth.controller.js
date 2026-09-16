@@ -5,6 +5,8 @@ const userModel = require("../models/user.model");
 const bcrypt = require("bcryptjs");
 // jsonwebtoken is used to create JWT authentication tokens.
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const { redisClient } = require("../config/redis");
 /**
  * @name registerUserController
  * @description Register a new user.
@@ -83,11 +85,14 @@ async function registerUserController(req, res) {
     //
     // The browser will then send this cookie with future requests,
     // allowing the server to know which user is logged in.
-    res.cookie("token", token);
+   res.cookie("token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict"
+});
 
 
-    // Send a successful response back to the client.
-    //
+    // Send a successful response back to the client
     // Notice that we DON'T send the password back.
     return res.status(201).json({
         message: "User registered successfully",
@@ -108,17 +113,12 @@ async function registerUserController(req, res) {
  * @access Public
  */
 async function loginUserController(req, res) {
-
     // Get email and password from the request body.
     const { email, password } = req.body;
-
-
     // Find the user using their email.
     const user = await userModel.findOne({
         email: email
     });
-
-
     // If no user exists with this email,
     // return an invalid credentials error.
     if (!user) {
@@ -129,23 +129,18 @@ async function loginUserController(req, res) {
 
 
     // Compare the password entered by the user
-    // with the hashed password stored in MongoDB.
-    //
+    // with the hashed password stored in MongoDB
     // bcrypt.compare() handles the hashing comparison for us.
     const isMatch = await bcrypt.compare(
         password,
         user.password
     );
-
-
     // If passwords don't match, login fails.
     if (!isMatch) {
         return res.status(400).json({
             message: "Invalid credentials"
         });
     }
-
-
     // Password is correct.
     // Now create a JWT token for this user.
     const token = jwt.sign(
@@ -153,18 +148,17 @@ async function loginUserController(req, res) {
             id: user._id,
             username: user.username
         },
-
         process.env.JWT_SECRET,
-
         {
             expiresIn: "1d"
-        }
-    );
-
+        });
 
     // Store the JWT in a cookie.
-    res.cookie("token", token);
-
+    res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict"
+    });
 
     // Send successful login response.
     return res.status(200).json({
@@ -175,19 +169,65 @@ async function loginUserController(req, res) {
             username: user.username,
             email: user.email
         },
-
-        // Sending the token in the response too.
-        token: token
+        
     });
 }
+async function logoutUserController(req, res) {
+    try {
+        // Get JWT from the cookie
+        const token = req.cookies.token;
+        // If there is no token, user is already logged out
+        if (!token) {
+            return res.status(200).json({
+                message: "Already logged out"
+            });
+        }
+        // Decode JWT only to read its expiry time.
+        // We are NOT trusting this for authentication.
+        const decoded = jwt.decode(token);
+        if (decoded && decoded.exp) {
+            // Current time in seconds
+            const currentTime = Math.floor(Date.now() / 1000);
+            // How many seconds are left before JWT expires?
+            const remainingTime = decoded.exp - currentTime;
+            if (remainingTime > 0) {
+                // Hash the token before storing it in Redis
+                const tokenHash = crypto
+                    .createHash("sha256")
+                    .update(token)
+                    .digest("hex");
 
+                // Add token to blacklist.
+                // EX = automatically delete this Redis entry
+                // after remainingTime seconds.
+                await redisClient.set(
+                    `blacklist:${tokenHash}`,
+                    "true",
+                    {
+                        EX: remainingTime
+                    }
+                );
+            }
+        }
+        // Delete JWT from browser
+        res.clearCookie("token");
+        return res.status(200).json({
+            message: "Logged out successfully"
+        });
 
+    } catch (error) {
+        console.error("Logout error:", error);
+        return res.status(500).json({
+            message: "Logout failed"
+        });
+    }
+}
 
 // Export both controllers.
-//
 // auth.route.js will import these functions
 // and connect them to API URLs.
 module.exports = {
     registerUserController,
-    loginUserController
+    loginUserController,
+     logoutUserController
 };
