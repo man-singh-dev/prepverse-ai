@@ -11,9 +11,7 @@ redisClient.on("error", (err) => {
 
 const connectRedis = async () => {
     await redisClient.connect();
-
     // ye bas confirm karne ke liye hai ki redis connect ho gaya
     console.log("redis connected");
 };
-
 module.exports = { redisClient, connectRedis };

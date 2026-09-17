@@ -2,51 +2,41 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { redisClient } = require("../config/redis");
 
+// protected route ke liye access token check karta hai
 async function authMiddleware(req, res, next) {
     try {
-        // Get JWT from the cookie
-        const token = req.cookies.token;
-
-        // No token = user isn't logged in
-        if (!token) {
+        const accessToken = req.cookies.accessToken;
+        if (!accessToken) {
             return res.status(401).json({
                 message: "Unauthorized"
             });
         }
-
-        // convert token into a SHA-256 hash.
-        // we store the hash in Redis instead of storing
-        // the actual JWT.
+        // token ka hash bana kar redis mein blacklist check karte hain
         const tokenHash = crypto
             .createHash("sha256")
-            .update(token)
+            .update(accessToken)
             .digest("hex");
-
-        // check whether this token has been blacklisted.
         const isBlacklisted = await redisClient.get(
             `blacklist:${tokenHash}`
         );
-        // If Redis has this token, it means the user
-        // has already logged out with this token.
         if (isBlacklisted) {
             return res.status(401).json({
                 message: "Token has been revoked"
             });
         }
-        // Token isn't blacklisted.
-        // Now verify that the JWT itself is valid.
+        // access token ko secret key se verify karte hain
         const decoded = jwt.verify(
-            token,
-            process.env.JWT_SECRET
+            accessToken,
+            process.env.ACCESS_TOKEN_SECRET
         );
-        // Store decoded user information in req.user
-        // so protected controllers can access it.
+        // decoded user information ko request ke andar store karte hain
         req.user = decoded;
+        // token valid hai toh next handler par chale jao
         next();
 
     } catch (error) {
         return res.status(401).json({
-            message: "Invalid or expired token"
+            message: "Invalid or expired access token"
         });
     }
 }
