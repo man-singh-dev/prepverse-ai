@@ -1,14 +1,17 @@
-import { RouterProvider } from 'react-router';
-import { ToastProvider } from './components/ui/Toast';
-import { router } from './app.routes';
-import './style.scss';
+import { RouterProvider } from "react-router"
+import { router } from "./app.routes.jsx"
+import { AuthProvider } from "./features/auth/auth.context.jsx"
+import { InterviewProvider } from "./features/interview/interview.context.jsx"
 
 function App() {
+
   return (
-    <ToastProvider>
-      <RouterProvider router={router} />
-    </ToastProvider>
-  );
+    <AuthProvider>
+      <InterviewProvider>
+        <RouterProvider router={router} />
+      </InterviewProvider>
+    </AuthProvider>
+  )
 }
 
-export default App;
+export default App
